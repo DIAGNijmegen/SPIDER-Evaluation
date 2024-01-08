@@ -15,74 +15,6 @@ import json
 from pathlib import Path
 
 
-
-# def surface_distances(
-#         manual: Iterable[bool],
-#         automatic: Iterable[bool],
-#         voxel_spacing: Optional[Iterable[float]] = None,
-#         connectivity: Optional[int] = None,
-# ) -> Iterable[float]:
-#     """Computes the surface distances (positive numbers) from all border voxels of a binary object in two images."""
-#     manual_mask = np.asarray(manual, dtype="bool")
-#     automatic_mask = np.asarray(automatic, dtype="bool")
-#
-#     if np.count_nonzero(manual_mask) == 0 or np.count_nonzero(automatic_mask) == 0:
-#         raise ValueError("Cannot compute surface distance if there are no foreground pixels in the image")
-#
-#     if connectivity is None:
-#         connectivity = manual_mask.ndim
-#
-#     # Extract border using erosion
-#     footprint = generate_binary_structure(manual_mask.ndim, connectivity)
-#     manual_border = manual_mask ^ binary_erosion(manual_mask, structure=footprint, iterations=1)
-#     automatic_border = automatic_mask ^ binary_erosion(automatic_mask, structure=footprint, iterations=1)
-#
-#     # Compute average surface distance
-#     dt = distance_transform_edt(~manual_border, sampling=voxel_spacing)
-#     return dt[automatic_border]
-
-
-# def average_surface_distance(
-#         manual: Iterable[bool],
-#         automatic: Iterable[bool],
-#         voxel_spacing: Optional[Iterable[float]] = None,
-#         connectivity: Optional[int] = None,
-#         symmetric: bool = True,
-# ) -> float:
-#     """
-#     Computes the average surface distance (ASD) between the binary objects in two images.
-#
-#     Parameters
-#     ----------
-#     manual
-#         Reference masks (binary)
-#
-#     automatic
-#         Masks that is compared to the reference mask
-#
-#     voxel_spacing
-#         Spacing between elements in the images
-#
-#     connectivity
-#         The neighbourhood/connectivity considered when determining the surface of the binary objects. Values between 1 and ndim are valid.
-#         Defaults to ndim, which is full connectivity even along the diagonal.
-#
-#     symmetric
-#         Whether the surface distance are calculated from manual to automatic mask, or symmetrically in both directions
-#
-#     Returns
-#     -------
-#     float
-#         Average surface distance
-#     """
-#     sd1 = surface_distances(manual, automatic, voxel_spacing, connectivity)
-#     if not symmetric:
-#         return np.asarray(sd1).mean()
-#
-#     sd2 = surface_distances(automatic, manual, voxel_spacing, connectivity)
-#     return float(np.concatenate((sd1, sd2)).mean())
-
-
 def dice_score(mask1: Iterable[bool], mask2: Iterable[bool]) -> float:
     """Dice volume overlap score for two binary masks"""
     m1 = np.asarray(mask1, dtype="bool").flatten()
@@ -105,15 +37,6 @@ class Spider:
 
         with open(self.input_path / "predictions.json", "r") as f:
             self.predictions_json = json.load(f)
-
-        # self.predictions_path = self.input_path / "images" / "sagittal-spine-mr-segmentation"
-        #
-        # self.input_path = Path(r"C:\Users\Z275151\Documents\GitHub\msk-spine-segmentation\SPIDER\images\sagittal-spine-mr-segmentation")
-        # self.output_path = Path(r"C:\Users\Z275151\Documents\GitHub\msk-spine-segmentation\SPIDER\test\output")
-        # self.ground_truth_path = Path(r"C:\Users\Z275151\Documents\GitHub\msk-spine-segmentation\SPIDER\ground-truth")
-        # self.predictions_path = Path(r"C:\Users\Z275151\Documents\GitHub\msk-spine-segmentation\SPIDER\test\images\sagittal-spine-mr-segmentation")
-        # with open("C:/Users/Z275151/Documents/GitHub/msk-spine-segmentation/SPIDER/test/predictions.json", "r") as f:
-        #     self.predictions_json = json.load(f)
 
 
     def score_case(self, gt_path, pred_path):
@@ -205,11 +128,7 @@ class Spider:
             'pred_fname': pred_path.name,
             'gt_fname': gt_path.name,
         }
-
-    # 'ASDVertebrae': surface_distance_vert,
-    # 'ASDDiscs': surface_distance_discs,
-    # 'ASDSpinalCanal': surface_distance_SC,
-    # 'OveralASD': overal_surface_distance,
+        
 
     def compute_metrics(self):
 
@@ -241,8 +160,6 @@ class Spider:
 
         with open("/output/metrics.json", "w") as f:
             json.dump(results_metric, f)
-        # with open("C:/Users/Z275151/Documents/GitHub/msk-spine-segmentation/SPIDER/test/metrics.json", "w") as f:
-        #     json.dump(results_metric, f)
 
 
 if __name__ == "__main__":
