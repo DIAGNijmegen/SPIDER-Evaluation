@@ -15,6 +15,74 @@ import json
 from pathlib import Path
 
 
+
+def surface_distances(
+        manual: Iterable[bool],
+        automatic: Iterable[bool],
+        voxel_spacing: Optional[Iterable[float]] = None,
+        connectivity: Optional[int] = None,
+) -> Iterable[float]:
+    """Computes the surface distances (positive numbers) from all border voxels of a binary object in two images."""
+    manual_mask = np.asarray(manual, dtype="bool")
+    automatic_mask = np.asarray(automatic, dtype="bool")
+
+    if np.count_nonzero(manual_mask) == 0 or np.count_nonzero(automatic_mask) == 0:
+        raise ValueError("Cannot compute surface distance if there are no foreground pixels in the image")
+
+    if connectivity is None:
+        connectivity = manual_mask.ndim
+
+    # Extract border using erosion
+    footprint = generate_binary_structure(manual_mask.ndim, connectivity)
+    manual_border = manual_mask ^ binary_erosion(manual_mask, structure=footprint, iterations=1)
+    automatic_border = automatic_mask ^ binary_erosion(automatic_mask, structure=footprint, iterations=1)
+
+    # Compute average surface distance
+    dt = distance_transform_edt(~manual_border, sampling=voxel_spacing)
+    return dt[automatic_border]
+
+
+def average_surface_distance(
+        manual: Iterable[bool],
+        automatic: Iterable[bool],
+        voxel_spacing: Optional[Iterable[float]] = None,
+        connectivity: Optional[int] = None,
+        symmetric: bool = True,
+) -> float:
+    """
+    Computes the average surface distance (ASD) between the binary objects in two images.
+
+    Parameters
+    ----------
+    manual
+        Reference masks (binary)
+
+    automatic
+        Masks that is compared to the reference mask
+
+    voxel_spacing
+        Spacing between elements in the images
+
+    connectivity
+        The neighbourhood/connectivity considered when determining the surface of the binary objects. Values between 1 and ndim are valid.
+        Defaults to ndim, which is full connectivity even along the diagonal.
+
+    symmetric
+        Whether the surface distance are calculated from manual to automatic mask, or symmetrically in both directions
+
+    Returns
+    -------
+    float
+        Average surface distance
+    """
+    sd1 = surface_distances(manual, automatic, voxel_spacing, connectivity)
+    if not symmetric:
+        return np.asarray(sd1).mean()
+
+    sd2 = surface_distances(automatic, manual, voxel_spacing, connectivity)
+    return float(np.concatenate((sd1, sd2)).mean())
+
+
 def dice_score(mask1: Iterable[bool], mask2: Iterable[bool]) -> float:
     """Dice volume overlap score for two binary masks"""
     m1 = np.asarray(mask1, dtype="bool").flatten()
@@ -55,7 +123,7 @@ class Spider:
 
         # Construct containers for the per-scan results
         all_dice_scores = defaultdict(list)
-        # all_surface_distances = defaultdict(list)
+        all_surface_distances = defaultdict(list)
 
         # Check if manual and automatic mask have the same dimensions
         if mask_manual.shape != mask_automatic.shape:
@@ -118,6 +186,34 @@ class Spider:
         detection_rate_vert = (total_vert - missed_vert) / total_vert
         detection_rate_discs = (total_discs - missed_discs) / total_discs
 
+        # Calculate mean absolute surface distances
+        surface_distances_vert = []
+        surface_distances_discs = []
+        for label_manual in all_labels_manual:
+            if label_manual not in label_lut:
+                distance = np.nan
+            else:
+                label_automatic = label_lut[label_manual]
+                distance = average_surface_distance(mask_manual == label_manual, mask_automatic == label_automatic,
+                                                    spacing)
+
+            if 'surface_distance_SC' in locals():
+                pass
+            else:
+                surface_distance_SC = 999
+
+            if label_manual > 0 and label_manual < 100:
+                surface_distances_vert.append(distance)
+            elif label_manual > 200:
+                surface_distances_discs.append(distance)
+            elif label_manual == 100:
+                surface_distance_SC = distance
+            all_surface_distances[label_manual].append(distance)
+
+        surface_distance_vert = np.mean(surface_distances_vert)
+        surface_distance_discs = np.mean(surface_distances_discs)
+        overal_surface_distance = np.mean([v for vs in all_surface_distances.values() for v in vs])
+
         return {
             'DiceScoreVertebrae': dice_score_vert,
             'DiceScoreDiscs': dice_score_discs,
@@ -125,10 +221,14 @@ class Spider:
             'OveralDiceScore': overall_dice_score,
             'DetectionRateVertebrae': detection_rate_vert,
             'DetectionRateDiscs': detection_rate_discs,
+            'ASDVertebrae': surface_distance_vert,
+            'ASDDiscs': surface_distance_discs,
+            'ASDSpinalCanal': surface_distance_SC,
+            'OveralASD': overal_surface_distance,
             'pred_fname': pred_path.name,
             'gt_fname': gt_path.name,
         }
-        
+
 
     def compute_metrics(self):
 
@@ -149,7 +249,7 @@ class Spider:
 
         df = pandas.DataFrame(metric_accumulator)
         metric_columns = ['DiceScoreVertebrae', 'DiceScoreDiscs', 'DiceScoreSpinalCanal',
-                          'OveralDiceScore', 'DetectionRateVertebrae', 'DetectionRateDiscs']#, 'ASDVertebrae', 'ASDDiscs', 'ASDSpinalCanal', 'OveralASD']
+                          'OveralDiceScore', 'DetectionRateVertebrae', 'DetectionRateDiscs', 'ASDVertebrae', 'ASDDiscs', 'ASDSpinalCanal', 'OveralASD']
 
         results_metric = {}
         for metric_column in metric_columns:
